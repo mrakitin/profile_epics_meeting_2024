@@ -1,0 +1,14 @@
+config/
+
+*~
+__pycache__/
+*.swp
+*.sqlite
+db/
+static/
+.idea/
+.vscode
+
+*.ods
+*.xls
+.~lock.*.xls#
