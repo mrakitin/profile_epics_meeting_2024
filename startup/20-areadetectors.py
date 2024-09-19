@@ -69,31 +69,13 @@ class TIFFPluginWithFileStore(TIFFPlugin, FileStoreTIFFIterativeWrite):
 class HDF5PluginWithFileStoreBase(HDF5Plugin, FileStoreHDF5IterativeWrite): ...
 
 
-class HDF5PluginWithFileStoreBaseRGB(HDF5PluginWithFileStoreBase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.filestore_spec = "AD_HDF5_RGB"
-
-
 class HDF5PluginWithFileStoreProsilica(HDF5PluginWithFileStoreBase):
     """Add this as a component to detectors that write HDF5s."""
 
     def warmup(self):
         """
         This is vendored from ophyd (https://github.com/bluesky/ophyd/blob/master/ophyd/areadetector/plugins.py)
-        to fix the non-existent "Internal" trigger mode that is hard-coded there:
-
-            In [13]: cam6.stage()
-            An exception has occurred, use '%tb verbose' to see the full traceback.
-            UnprimedPlugin: The plugin hdf5 on the area detector with name cam6 has not been primed.
-
-            See /home/xf08bm/bluesky-files/log/bluesky/bluesky.log for the full traceback.
-
-            In [14]: cam6.hdf5.warmup()
-            An exception has occurred, use '%tb verbose' to see the full traceback.
-            ValueError: invalid literal for int() with base 0: b'Internal'
-
-            See /home/xf08bm/bluesky-files/log/bluesky/bluesky.log for the full traceback.
+        to fix the non-existent "Internal" trigger mode that is hard-coded there.
         """
         self.enable.set(1).wait()
         sigs = OrderedDict(
@@ -141,16 +123,8 @@ class TIFFPluginEnsuredOff(TIFFPlugin):
 class StandardProsilica(SingleTriggerV33, ProsilicaDetectorV33):
     image = Cpt(ImagePlugin, "ARR:")
     stats = Cpt(StatsPluginV33, "STAT:")
-    # stats2 = Cpt(StatsPluginV33, 'Stats2:')
-    # stats3 = Cpt(StatsPluginV33, 'Stats3:')
-    # stats4 = Cpt(StatsPluginV33, 'Stats4:')
-    # stats5 = Cpt(StatsPluginV33, 'Stats5:')
-    # trans1 = Cpt(TransformPlugin, 'Trans1:')
     roi = Cpt(ROIPlugin, "ROI:")
-    # roi2 = Cpt(ROIPlugin, 'ROI2:')
-    # roi3 = Cpt(ROIPlugin, 'ROI3:')
-    # roi4 = Cpt(ROIPlugin, 'ROI4:')
-    proc1 = Cpt(ProcessPlugin, "PROC:")
+    proc = Cpt(ProcessPlugin, "PROC:")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -173,12 +147,15 @@ class CustomTIFFPluginWithFileStore(TIFFPluginWithFileStore):
             return 1
 
 
+# TODO: EPICS Meeting workshop participants, please test and propose fixes
+# via a PR. Thanks!
 class StandardProsilicaWithTIFF(StandardProsilica):
     tiff = Cpt(
         CustomTIFFPluginWithFileStore,
-        suffix="TIFF1:",
-        write_path_template="/data",
+        suffix="TIFF:",
         root="/",
+        write_path_template="/data",
+        read_path_template="/tmp/data",
     )
 
 
@@ -186,45 +163,17 @@ class StandardProsilicaWithHDF5(StandardProsilica):
     hdf5 = Cpt(
         HDF5PluginWithFileStoreProsilica,
         suffix="HDF:",
-        write_path_template="/data",
         root="/",
+        write_path_template="/data",
+        read_path_template="/tmp/data",
     )
 
 
-class CamWithHDF5(StandardProsilica):
-    hdf5 = Cpt(
-        HDF5PluginWithFileStoreBaseRGB,
-        suffix="HDF:",
-        write_path_template="/data",
-        root="/",
-    )
-
-
-class ADURLHDF5Handler(AreaDetectorHDF5Handler):
-    """
-    Modification of the Area Detector handler HDF5 for RGB data.
-    """
-
-    def __call__(self, point_number):
-        # Don't read out the dataset until it is requested for the first time.
-        if self._dataset is None:
-            try:
-                self._dataset = dask.array.from_array(self._file[self._key])
-                self._dataset = self._dataset.sum(axis=-1)
-            except KeyError as error:
-                raise IOError(H5PY_KEYERROR_IOERROR_MSG) from error
-
-        return super().__call__(point_number)
-
-
-db.reg.register_handler("AD_HDF5_RGB", ADURLHDF5Handler, overwrite=True)
-
-
-cam = CamWithHDF5("BL01T-DI-CAM-01:", name="cam")
+cam = StandardProsilicaWithHDF5("BL01T-DI-CAM-01:", name="cam")
 cam.wait_for_connection()
-warmup_hdf5_plugins([cam])
-
 cam.cam.ensure_nonblocking()
+
+warmup_hdf5_plugins([cam])
 
 cam.kind = Kind.hinted
 cam.stats.kind = Kind.hinted
