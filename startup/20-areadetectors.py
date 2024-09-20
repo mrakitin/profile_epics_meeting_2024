@@ -66,7 +66,8 @@ class TIFFPluginWithFileStore(TIFFPlugin, FileStoreTIFFIterativeWrite):
     pass
 
 
-class HDF5PluginWithFileStoreBase(HDF5Plugin, FileStoreHDF5IterativeWrite): ...
+class HDF5PluginWithFileStoreBase(HDF5Plugin, FileStoreHDF5IterativeWrite):
+    pass
 
 
 class HDF5PluginWithFileStoreProsilica(HDF5PluginWithFileStoreBase):
@@ -105,19 +106,33 @@ class HDF5PluginWithFileStoreProsilica(HDF5PluginWithFileStoreBase):
             ttime.sleep(0.1)
             sig.set(val).wait()
 
-    def get_frames_per_point(self):
-        if not self.parent.is_flying:
-            return self.parent.cam.num_images.get()
+    def describe(self):
+        description = super().describe()
+        key = self.parent._image_name
+
+        if not description:
+            description[key] = self.parent.make_data_key()
+
+        color_mode = self.parent.cam.color_mode.get(as_string=True)
+        if color_mode == "Mono":
+            # description[key]["shape"] = (
+            #     self.parent.cam.num_images.get(),
+            #     self.array_size.height.get(),
+            #     self.array_size.width.get(),
+            # )
+            pass
+
+        elif color_mode in ["RGB1", "Bayer"]:
+            description[key]["shape"] = [self.parent.cam.num_images.get(), *self.array_size.get()]
         else:
-            return 1
+            raise RuntimeError("Should never be here")
 
+        cam_dtype = self.parent.cam.data_type.get(as_string=True)
+        type_map = {"Int8": "|i1", "UInt8": "|u1", "UInt16": "<u2", "Float32": "<f4", "Float64": "<f8"}
+        if cam_dtype in type_map:
+            description[key].setdefault("dtype_str", type_map[cam_dtype])
 
-class TIFFPluginEnsuredOff(TIFFPlugin):
-    """Add this as a component to detectors that do not write TIFFs."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.stage_sigs.update([("auto_save", "No")])
+        return description
 
 
 class StandardProsilica(SingleTriggerV33, ProsilicaDetectorV33):
@@ -126,32 +141,12 @@ class StandardProsilica(SingleTriggerV33, ProsilicaDetectorV33):
     roi = Cpt(ROIPlugin, "ROI:")
     proc = Cpt(ProcessPlugin, "PROC:")
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._is_flying = False
-
-    @property
-    def is_flying(self):
-        return self._is_flying
-
-    @is_flying.setter
-    def is_flying(self, is_flying):
-        self._is_flying = is_flying
-
-
-class CustomTIFFPluginWithFileStore(TIFFPluginWithFileStore):
-    def get_frames_per_point(self):
-        if not self.parent.is_flying:
-            return self.parent.cam.num_images.get()
-        else:
-            return 1
-
 
 # TODO: EPICS Meeting workshop participants, please test and propose fixes
 # via a PR. Thanks!
 class StandardProsilicaWithTIFF(StandardProsilica):
     tiff = Cpt(
-        CustomTIFFPluginWithFileStore,
+        TIFFPluginWithFileStore,
         suffix="TIFF:",
         root="/",
         write_path_template="/data",
