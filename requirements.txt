@@ -1,0 +1,6 @@
+bluesky[all]
+databroker[all]>=2.0.0b
+matplotlib
+nslsii
+ophyd
+pyqt5

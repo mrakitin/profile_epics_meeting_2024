@@ -1,40 +1,11 @@
 import time as ttime  # tea time
 from collections import OrderedDict
-from datetime import datetime
-from pathlib import PurePath
-from types import SimpleNamespace
 
-import dask
 from area_detector_handlers.handlers import H5PY_KEYERROR_IOERROR_MSG, AreaDetectorHDF5Handler
-from bluesky.plan_stubs import close_run, open_run, pause, stage, trigger_and_read, unstage
 from nslsii.ad33 import SingleTriggerV33, StatsPluginV33
-from ophyd import AreaDetector
 from ophyd import Component as Cpt
-from ophyd import (
-    DetectorBase,
-    Device,
-    EpicsSignal,
-    EpicsSignalRO,
-    ImagePlugin,
-    Kind,
-    ProcessPlugin,
-    ProsilicaDetector,
-    ProsilicaDetectorCam,
-    ROIPlugin,
-    Signal,
-    SingleTrigger,
-    StatsPlugin,
-    TransformPlugin,
-)
-from ophyd.areadetector.base import ADComponent, EpicsSignalWithRBV
-from ophyd.areadetector.cam import AreaDetectorCam
-from ophyd.areadetector.filestore_mixins import (
-    FileStoreBase,
-    FileStoreHDF5IterativeWrite,
-    FileStoreIterativeWrite,
-    FileStoreTIFFIterativeWrite,
-    new_short_uid,
-)
+from ophyd import EpicsSignal, ImagePlugin, Kind, ProcessPlugin, ProsilicaDetector, ProsilicaDetectorCam, ROIPlugin
+from ophyd.areadetector.filestore_mixins import FileStoreHDF5IterativeWrite, FileStoreTIFFIterativeWrite
 from ophyd.areadetector.plugins import HDF5Plugin_V34 as HDF5Plugin
 from ophyd.areadetector.plugins import TIFFPlugin_V34 as TIFFPlugin
 
@@ -72,39 +43,6 @@ class HDF5PluginWithFileStoreBase(HDF5Plugin, FileStoreHDF5IterativeWrite):
 
 class HDF5PluginWithFileStoreProsilica(HDF5PluginWithFileStoreBase):
     """Add this as a component to detectors that write HDF5s."""
-
-    def warmup(self):
-        """
-        This is vendored from ophyd (https://github.com/bluesky/ophyd/blob/master/ophyd/areadetector/plugins.py)
-        to fix the non-existent "Internal" trigger mode that is hard-coded there.
-        """
-        self.enable.set(1).wait()
-        sigs = OrderedDict(
-            [
-                (self.parent.cam.array_callbacks, 1),
-                (self.parent.cam.image_mode, "Single"),
-                (
-                    self.parent.cam.trigger_mode,
-                    "Fixed Rate",
-                ),  # updated here "Internal" -> "Fixed Rate"
-                # just in case tha acquisition time is set very long...
-                (self.parent.cam.acquire_time, 1),
-                (self.parent.cam.acquire_period, 1),
-                (self.parent.cam.acquire, 1),
-            ]
-        )
-
-        original_vals = {sig: sig.get() for sig in sigs}
-
-        for sig, val in sigs.items():
-            ttime.sleep(0.1)  # abundance of caution
-            sig.set(val).wait()
-
-        ttime.sleep(2)  # wait for acquisition
-
-        for sig, val in reversed(list(original_vals.items())):
-            ttime.sleep(0.1)
-            sig.set(val).wait()
 
     def describe(self):
         description = super().describe()
@@ -163,6 +101,8 @@ class StandardProsilicaWithHDF5(StandardProsilica):
         read_path_template="/tmp/data",
     )
 
+
+### Instantiation/configuration:
 
 cam = StandardProsilicaWithHDF5("BL01T-DI-CAM-01:", name="cam")
 cam.wait_for_connection()
